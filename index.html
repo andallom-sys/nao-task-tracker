@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAO Medical Task Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">NAO Medical</p>
+        <h1>Task Tracker</h1>
+        <p class="hero-copy">A branded kanban board for operations workstreams, with drag-and-drop task movement, due dates, notes, and attached links.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="newTaskButton" class="primary-button" type="button">Add Task</button>
+        <button id="resetBoardButton" class="ghost-button" type="button">Reset Sample Data</button>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <label class="search-field" for="searchInput">
+        <span>Search</span>
+        <input id="searchInput" type="search" placeholder="Find by title, note, description, or link">
+      </label>
+      <div class="stats-panel">
+        <p class="sync-pill" id="syncStatus" aria-live="polite">Connecting to shared board...</p>
+        <p class="drag-hint">Drag cards between columns to update status.</p>
+        <div class="stats" id="boardStats" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <main class="board" id="board">
+      <section class="column" data-status="todo">
+        <div class="column-header">
+          <div>
+            <p class="column-kicker">Queue</p>
+            <h2>To Do</h2>
+          </div>
+          <span class="column-count" data-count-for="todo">0</span>
+        </div>
+        <div class="card-list" data-dropzone="todo"></div>
+      </section>
+
+      <section class="column" data-status="in-progress">
+        <div class="column-header">
+          <div>
+            <p class="column-kicker">Active</p>
+            <h2>In Progress</h2>
+          </div>
+          <span class="column-count" data-count-for="in-progress">0</span>
+        </div>
+        <div class="card-list" data-dropzone="in-progress"></div>
+      </section>
+
+      <section class="column" data-status="done">
+        <div class="column-header">
+          <div>
+            <p class="column-kicker">Closed</p>
+            <h2>Done</h2>
+          </div>
+          <span class="column-count" data-count-for="done">0</span>
+        </div>
+        <div class="card-list" data-dropzone="done"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="taskDialog" class="task-dialog">
+    <form id="taskForm" method="dialog" class="task-form">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Board Item</p>
+          <h2 id="dialogTitle">Add Task</h2>
+        </div>
+        <button id="closeDialogButton" class="icon-button" type="button" aria-label="Close">x</button>
+      </div>
+
+      <input id="taskId" type="hidden">
+
+      <label>
+        <span>Task</span>
+        <input id="taskTitle" name="taskTitle" type="text" maxlength="120" placeholder="Enter task name" required>
+      </label>
+
+      <label>
+        <span>Description</span>
+        <textarea id="taskDescription" name="taskDescription" rows="3" maxlength="600" placeholder="What needs to happen?"></textarea>
+      </label>
+
+      <label>
+        <span>Note</span>
+        <textarea id="taskNote" name="taskNote" rows="3" maxlength="600" placeholder="Add context, blockers, or follow-up notes"></textarea>
+      </label>
+
+      <div class="form-grid">
+        <label>
+          <span>Status</span>
+          <select id="taskStatus" name="taskStatus">
+            <option value="todo">To Do</option>
+            <option value="in-progress">In Progress</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Due date</span>
+          <input id="taskDueDate" name="taskDueDate" type="date">
+        </label>
+      </div>
+
+      <label>
+        <span>Attach link</span>
+        <input id="taskLink" name="taskLink" type="url" placeholder="https://...">
+      </label>
+
+      <div class="dialog-actions">
+        <button id="deleteTaskButton" class="danger-button" type="button" hidden>Delete</button>
+        <div class="action-group">
+          <button class="ghost-button" id="cancelTaskButton" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save Task</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="taskCardTemplate">
+    <article class="task-card" draggable="true">
+      <div class="task-card-top">
+        <div>
+          <h3 class="task-title"></h3>
+          <p class="task-description"></p>
+        </div>
+        <button class="edit-chip" type="button">Edit</button>
+      </div>
+      <p class="task-note"></p>
+      <div class="task-meta">
+        <span class="due-pill"></span>
+        <a class="task-link" href="" target="_blank" rel="noreferrer noopener">Open Link</a>
+      </div>
+    </article>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
