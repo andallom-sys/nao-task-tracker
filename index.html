@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NAO Medical Task Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Adamina&family=Commissioner:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,14 +14,29 @@
     <header class="hero">
       <div>
         <p class="eyebrow">NAO Medical</p>
-        <h1>Task Tracker</h1>
-        <p class="hero-copy">A branded kanban board for operations workstreams, with drag-and-drop task movement, due dates, notes, and attached links.</p>
+        <h1>Site Operations Tracker</h1>
+        <p class="hero-copy">A shared dashboard for tracking site operations tasks across teams, with clear ownership, progress updates, due dates, notes, and linked follow-up items.</p>
       </div>
       <div class="hero-actions">
+        <button id="manageAssigneesButton" class="ghost-button" type="button">Manage Assignees</button>
         <button id="newTaskButton" class="primary-button" type="button">Add Task</button>
-        <button id="resetBoardButton" class="ghost-button" type="button">Reset Sample Data</button>
       </div>
     </header>
+
+    <section class="summary-strip" aria-label="Board summary">
+      <article class="summary-card">
+        <p class="summary-label">Pending</p>
+        <p class="summary-value" id="summaryPending">0</p>
+      </article>
+      <article class="summary-card">
+        <p class="summary-label">In Progress</p>
+        <p class="summary-value" id="summaryInProgress">0</p>
+      </article>
+      <article class="summary-card">
+        <p class="summary-label">Blocked</p>
+        <p class="summary-value" id="summaryBlocked">0</p>
+      </article>
+    </section>
 
     <section class="toolbar">
       <label class="search-field" for="searchInput">
@@ -33,15 +51,15 @@
     </section>
 
     <main class="board" id="board">
-      <section class="column" data-status="todo">
+      <section class="column" data-status="pending">
         <div class="column-header">
           <div>
             <p class="column-kicker">Queue</p>
-            <h2>To Do</h2>
+            <h2>Pending</h2>
           </div>
-          <span class="column-count" data-count-for="todo">0</span>
+          <span class="column-count" data-count-for="pending">0</span>
         </div>
-        <div class="card-list" data-dropzone="todo"></div>
+        <div class="card-list" data-dropzone="pending"></div>
       </section>
 
       <section class="column" data-status="in-progress">
@@ -65,6 +83,17 @@
         </div>
         <div class="card-list" data-dropzone="done"></div>
       </section>
+
+      <section class="column" data-status="blocked">
+        <div class="column-header">
+          <div>
+            <p class="column-kicker">Risk</p>
+            <h2>Blocked</h2>
+          </div>
+          <span class="column-count" data-count-for="blocked">0</span>
+        </div>
+        <div class="card-list" data-dropzone="blocked"></div>
+      </section>
     </main>
   </div>
 
@@ -86,6 +115,13 @@
       </label>
 
       <label>
+        <span>Assignee</span>
+        <select id="taskAssignee" name="taskAssignee">
+          <option value="">Unassigned</option>
+        </select>
+      </label>
+
+      <label>
         <span>Description</span>
         <textarea id="taskDescription" name="taskDescription" rows="3" maxlength="600" placeholder="What needs to happen?"></textarea>
       </label>
@@ -99,9 +135,10 @@
         <label>
           <span>Status</span>
           <select id="taskStatus" name="taskStatus">
-            <option value="todo">To Do</option>
+            <option value="pending">Pending</option>
             <option value="in-progress">In Progress</option>
             <option value="done">Done</option>
+            <option value="blocked">Blocked</option>
           </select>
         </label>
 
@@ -126,11 +163,37 @@
     </form>
   </dialog>
 
+  <dialog id="assigneeDialog" class="task-dialog">
+    <div class="task-form">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Team</p>
+          <h2>Manage Assignees</h2>
+        </div>
+        <button id="closeAssigneeDialogButton" class="icon-button" type="button" aria-label="Close">x</button>
+      </div>
+
+      <label>
+        <span>Add assignee</span>
+        <div class="inline-form">
+          <input id="newAssigneeName" type="text" maxlength="80" placeholder="Enter full name">
+          <button id="addAssigneeButton" class="primary-button" type="button">Add Name</button>
+        </div>
+      </label>
+
+      <div>
+        <span class="field-label">Current assignees</span>
+        <div id="assigneeList" class="assignee-list"></div>
+      </div>
+    </div>
+  </dialog>
+
   <template id="taskCardTemplate">
     <article class="task-card" draggable="true">
       <div class="task-card-top">
         <div>
           <h3 class="task-title"></h3>
+          <p class="task-assignee"></p>
           <p class="task-description"></p>
         </div>
         <button class="edit-chip" type="button">Edit</button>

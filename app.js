@@ -1,40 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
-const sampleTasks = [
-  {
-    id: crypto.randomUUID(),
-    title: "Finalize Q2 Operations Review",
-    description: "Pull the deck together and confirm which leaders are presenting.",
-    note: "Need finance numbers before the final version goes out.",
-    status: "todo",
-    due_date: "",
-    link: "https://naomedical.com"
-  },
-  {
-    id: crypto.randomUUID(),
-    title: "Open LIC staffing requisition",
-    description: "Post the role and collect approvals from HR and clinic leadership.",
-    note: "Candidate pipeline should be reviewed this week.",
-    status: "in-progress",
-    due_date: getRelativeDate(2),
-    link: ""
-  },
-  {
-    id: crypto.randomUUID(),
-    title: "Close patient feedback follow-up",
-    description: "Confirm outreach is completed for all detractor responses from last week.",
-    note: "Escalations have already been shared with patient relations.",
-    status: "done",
-    due_date: getRelativeDate(-1),
-    link: ""
-  }
+const defaultAssignees = [
+  "Bea Montenegro",
+  "Christian Galang",
+  "Margen Andallo"
 ];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const state = {
   tasks: [],
+  assignees: [],
   searchTerm: "",
   dragTaskId: null,
   isLoading: true,
@@ -43,6 +20,7 @@ const state = {
 
 const board = document.querySelector("#board");
 const dialog = document.querySelector("#taskDialog");
+const assigneeDialog = document.querySelector("#assigneeDialog");
 const taskForm = document.querySelector("#taskForm");
 const dialogTitle = document.querySelector("#dialogTitle");
 const deleteTaskButton = document.querySelector("#deleteTaskButton");
@@ -50,10 +28,16 @@ const stats = document.querySelector("#boardStats");
 const searchInput = document.querySelector("#searchInput");
 const template = document.querySelector("#taskCardTemplate");
 const syncStatus = document.querySelector("#syncStatus");
+const summaryPending = document.querySelector("#summaryPending");
+const summaryInProgress = document.querySelector("#summaryInProgress");
+const summaryBlocked = document.querySelector("#summaryBlocked");
+const assigneeList = document.querySelector("#assigneeList");
+const newAssigneeName = document.querySelector("#newAssigneeName");
 
 const fields = {
   id: document.querySelector("#taskId"),
   title: document.querySelector("#taskTitle"),
+  assignee: document.querySelector("#taskAssignee"),
   description: document.querySelector("#taskDescription"),
   note: document.querySelector("#taskNote"),
   status: document.querySelector("#taskStatus"),
@@ -62,9 +46,11 @@ const fields = {
 };
 
 document.querySelector("#newTaskButton").addEventListener("click", () => openDialog());
+document.querySelector("#manageAssigneesButton").addEventListener("click", openAssigneeDialog);
 document.querySelector("#closeDialogButton").addEventListener("click", closeDialog);
 document.querySelector("#cancelTaskButton").addEventListener("click", closeDialog);
-document.querySelector("#resetBoardButton").addEventListener("click", seedSampleData);
+document.querySelector("#closeAssigneeDialogButton").addEventListener("click", closeAssigneeDialog);
+document.querySelector("#addAssigneeButton").addEventListener("click", addAssignee);
 
 searchInput.addEventListener("input", event => {
   state.searchTerm = event.target.value.trim().toLowerCase();
@@ -98,6 +84,19 @@ dialog.addEventListener("click", event => {
   }
 });
 
+assigneeDialog.addEventListener("click", event => {
+  const rect = assigneeDialog.getBoundingClientRect();
+  const clickedInDialog =
+    rect.top <= event.clientY &&
+    event.clientY <= rect.top + rect.height &&
+    rect.left <= event.clientX &&
+    event.clientX <= rect.left + rect.width;
+
+  if (!clickedInDialog) {
+    closeAssigneeDialog();
+  }
+});
+
 board.querySelectorAll("[data-dropzone]").forEach(zone => {
   zone.addEventListener("dragover", event => {
     event.preventDefault();
@@ -122,6 +121,8 @@ board.querySelectorAll("[data-dropzone]").forEach(zone => {
 });
 
 subscribeToTasks();
+subscribeToAssignees();
+await loadAssignees();
 await loadBoard();
 
 async function loadBoard() {
@@ -132,7 +133,7 @@ async function loadBoard() {
 
   const { data, error } = await supabase
     .from("tasks")
-    .select("id, title, description, note, status, due_date, link, created_at, updated_at")
+    .select("id, title, assignee, description, note, status, due_date, link, created_at, updated_at")
     .order("status", { ascending: true })
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("updated_at", { ascending: false });
@@ -151,10 +152,27 @@ async function loadBoard() {
   renderBoard();
 }
 
+async function loadAssignees() {
+  const { data, error } = await supabase
+    .from("assignees")
+    .select("id, name")
+    .order("name", { ascending: true });
+
+  if (error) {
+    setSyncStatus(error.message || "Could not load assignees.", true);
+    return;
+  }
+
+  state.assignees = data ?? [];
+  renderAssigneeOptions();
+  renderAssigneeList();
+}
+
 async function saveTask() {
   const task = {
     id: fields.id.value || crypto.randomUUID(),
     title: fields.title.value.trim(),
+    assignee: fields.assignee.value.trim(),
     description: fields.description.value.trim(),
     note: fields.note.value.trim(),
     status: fields.status.value,
@@ -192,6 +210,7 @@ async function updateTask(taskId, patch) {
     .from("tasks")
     .update({
       title: currentTask.title,
+      assignee: currentTask.assignee,
       description: currentTask.description,
       note: currentTask.note,
       status: patch.status ?? currentTask.status,
@@ -222,22 +241,37 @@ async function deleteTask(taskId) {
   await loadBoard();
 }
 
-async function seedSampleData() {
-  setSyncStatus("Resetting shared sample data...", false);
-
-  const { error: deleteError } = await supabase.from("tasks").delete().neq("id", "");
-  if (deleteError) {
-    setSyncStatus(deleteError.message || "Could not reset the board.", true);
+async function addAssignee() {
+  const name = newAssigneeName.value.trim();
+  if (!name) {
+    newAssigneeName.focus();
     return;
   }
 
-  const { error: insertError } = await supabase.from("tasks").insert(sampleTasks);
-  if (insertError) {
-    setSyncStatus(insertError.message || "Could not reset the board.", true);
+  const existing = getMergedAssigneeNames().some(item => item.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    newAssigneeName.value = "";
     return;
   }
 
-  await loadBoard();
+  const { error } = await supabase.from("assignees").insert({ name });
+  if (error) {
+    setSyncStatus(error.message || "Could not add assignee.", true);
+    return;
+  }
+
+  newAssigneeName.value = "";
+  await loadAssignees();
+}
+
+async function removeAssignee(id) {
+  const { error } = await supabase.from("assignees").delete().eq("id", id);
+  if (error) {
+    setSyncStatus(error.message || "Could not remove assignee.", true);
+    return;
+  }
+
+  await loadAssignees();
 }
 
 function subscribeToTasks() {
@@ -249,9 +283,19 @@ function subscribeToTasks() {
     .subscribe();
 }
 
+function subscribeToAssignees() {
+  supabase
+    .channel("public:assignees")
+    .on("postgres_changes", { event: "*", schema: "public", table: "assignees" }, async () => {
+      await loadAssignees();
+    })
+    .subscribe();
+}
+
 function renderBoard() {
-  const columns = ["todo", "in-progress", "done"];
-  const visibleTasks = state.tasks.filter(matchesSearch);
+  const columns = ["pending", "in-progress", "done", "blocked"];
+  const normalizedTasks = state.tasks.map(normalizeTask);
+  const visibleTasks = normalizedTasks.filter(matchesSearch);
 
   columns.forEach(status => {
     const zone = document.querySelector(`[data-dropzone="${status}"]`);
@@ -271,7 +315,7 @@ function renderBoard() {
     if (state.errorMessage) {
       const empty = document.createElement("div");
       empty.className = "empty-state error";
-      empty.textContent = status === "todo" ? state.errorMessage : "Shared data is not available right now.";
+      empty.textContent = status === "pending" ? state.errorMessage : "Shared data is not available right now.";
       zone.appendChild(empty);
       return;
     }
@@ -290,12 +334,16 @@ function renderBoard() {
   });
 
   stats.textContent = `${visibleTasks.length} visible task${visibleTasks.length === 1 ? "" : "s"} across ${state.tasks.length} total`;
+  summaryPending.textContent = String(normalizedTasks.filter(task => task.status === "pending").length);
+  summaryInProgress.textContent = String(normalizedTasks.filter(task => task.status === "in-progress").length);
+  summaryBlocked.textContent = String(normalizedTasks.filter(task => task.status === "blocked").length);
 }
 
 function buildTaskCard(task) {
   const fragment = template.content.cloneNode(true);
   const card = fragment.querySelector(".task-card");
   const title = fragment.querySelector(".task-title");
+  const assignee = fragment.querySelector(".task-assignee");
   const description = fragment.querySelector(".task-description");
   const note = fragment.querySelector(".task-note");
   const duePill = fragment.querySelector(".due-pill");
@@ -304,7 +352,9 @@ function buildTaskCard(task) {
 
   card.dataset.taskId = task.id;
   card.classList.add(`status-${task.status}`);
+  applyAssigneeTheme(card, task.assignee);
   title.textContent = task.title;
+  assignee.textContent = task.assignee || "Unassigned";
   description.textContent = task.description || "No description added.";
   note.textContent = task.note || "No note added.";
 
@@ -336,22 +386,26 @@ function buildTaskCard(task) {
 
 function openDialog(task = null) {
   taskForm.reset();
+  renderAssigneeOptions();
 
   if (task) {
+    const normalizedTask = normalizeTask(task);
     dialogTitle.textContent = "Edit Task";
     deleteTaskButton.hidden = false;
-    fields.id.value = task.id;
-    fields.title.value = task.title;
-    fields.description.value = task.description;
-    fields.note.value = task.note;
-    fields.status.value = task.status;
-    fields.dueDate.value = task.due_date || "";
-    fields.link.value = task.link;
+    fields.id.value = normalizedTask.id;
+    fields.title.value = normalizedTask.title;
+    fields.assignee.value = normalizedTask.assignee || "";
+    fields.description.value = normalizedTask.description;
+    fields.note.value = normalizedTask.note;
+    fields.status.value = normalizedTask.status;
+    fields.dueDate.value = normalizedTask.due_date || "";
+    fields.link.value = normalizedTask.link;
   } else {
     dialogTitle.textContent = "Add Task";
     deleteTaskButton.hidden = true;
     fields.id.value = "";
-    fields.status.value = "todo";
+    fields.assignee.value = "";
+    fields.status.value = "pending";
   }
 
   dialog.showModal();
@@ -360,6 +414,70 @@ function openDialog(task = null) {
 
 function closeDialog() {
   dialog.close();
+}
+
+function openAssigneeDialog() {
+  renderAssigneeList();
+  assigneeDialog.showModal();
+  newAssigneeName.focus();
+}
+
+function closeAssigneeDialog() {
+  assigneeDialog.close();
+}
+
+function renderAssigneeOptions() {
+  const currentValue = fields.assignee.value;
+  const names = getMergedAssigneeNames();
+
+  fields.assignee.innerHTML = '<option value="">Unassigned</option>';
+
+  names.forEach(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    fields.assignee.appendChild(option);
+  });
+
+  fields.assignee.value = names.includes(currentValue) ? currentValue : "";
+}
+
+function renderAssigneeList() {
+  assigneeList.innerHTML = "";
+
+  if (!state.assignees.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No assignees yet. Add a name to build the dropdown.";
+    assigneeList.appendChild(empty);
+    return;
+  }
+
+  state.assignees.forEach(assignee => {
+    const row = document.createElement("div");
+    row.className = "assignee-row";
+
+    const label = document.createElement("span");
+    label.className = "assignee-name";
+    label.textContent = assignee.name;
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "ghost-button";
+    removeButton.type = "button";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", async () => {
+      await removeAssignee(assignee.id);
+    });
+
+    row.append(label, removeButton);
+    assigneeList.appendChild(row);
+  });
+}
+
+function getMergedAssigneeNames() {
+  const names = new Set(defaultAssignees);
+  state.assignees.forEach(assignee => names.add(assignee.name));
+  return Array.from(names).sort((left, right) => left.localeCompare(right));
 }
 
 function setSyncStatus(message, isError) {
@@ -384,7 +502,7 @@ function matchesSearch(task) {
     return true;
   }
 
-  const haystack = [task.title, task.description, task.note, task.link, task.due_date]
+  const haystack = [task.title, task.description, task.note, task.link, task.due_date, task.assignee]
     .join(" ")
     .toLowerCase();
 
@@ -431,8 +549,38 @@ function formatDueDate(dueDate) {
   return { label: `Due ${formatted}`, kind: "upcoming" };
 }
 
-function getRelativeDate(offsetDays) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
+function normalizeTask(task) {
+  let status = task.status;
+  if (status === "todo") {
+    status = "pending";
+  } else if (status === "needs-attention") {
+    status = "in-progress";
+  }
+
+  return {
+    ...task,
+    assignee: task.assignee || "",
+    status
+  };
+}
+
+function applyAssigneeTheme(card, assignee) {
+  const themes = [
+    ["#5f7cb6", "rgba(95, 124, 182, 0.14)"],
+    ["#739a69", "rgba(115, 154, 105, 0.16)"],
+    ["#c17e49", "rgba(193, 126, 73, 0.16)"],
+    ["#8a68b5", "rgba(138, 104, 181, 0.16)"],
+    ["#3d8b87", "rgba(61, 139, 135, 0.16)"]
+  ];
+
+  const name = (assignee || "unassigned").trim().toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash << 5) - hash + name.charCodeAt(index);
+    hash |= 0;
+  }
+
+  const [strong, soft] = themes[Math.abs(hash) % themes.length];
+  card.style.setProperty("--assignee-strong", strong);
+  card.style.setProperty("--assignee-soft", soft);
 }
