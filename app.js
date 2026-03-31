@@ -5,24 +5,27 @@ const sampleTasks = [
   {
     id: crypto.randomUUID(),
     title: "Finalize Q2 Operations Review",
+    assignee: "Margen",
     description: "Pull the deck together and confirm which leaders are presenting.",
     note: "Need finance numbers before the final version goes out.",
-    status: "todo",
+    status: "pending",
     due_date: "",
     link: "https://naomedical.com"
   },
   {
     id: crypto.randomUUID(),
     title: "Open LIC staffing requisition",
+    assignee: "Bea",
     description: "Post the role and collect approvals from HR and clinic leadership.",
     note: "Candidate pipeline should be reviewed this week.",
-    status: "in-progress",
+    status: "needs-attention",
     due_date: getRelativeDate(2),
     link: ""
   },
   {
     id: crypto.randomUUID(),
     title: "Close patient feedback follow-up",
+    assignee: "Margen",
     description: "Confirm outreach is completed for all detractor responses from last week.",
     note: "Escalations have already been shared with patient relations.",
     status: "done",
@@ -50,10 +53,14 @@ const stats = document.querySelector("#boardStats");
 const searchInput = document.querySelector("#searchInput");
 const template = document.querySelector("#taskCardTemplate");
 const syncStatus = document.querySelector("#syncStatus");
+const summaryPending = document.querySelector("#summaryPending");
+const summaryDone = document.querySelector("#summaryDone");
+const summaryAttention = document.querySelector("#summaryAttention");
 
 const fields = {
   id: document.querySelector("#taskId"),
   title: document.querySelector("#taskTitle"),
+  assignee: document.querySelector("#taskAssignee"),
   description: document.querySelector("#taskDescription"),
   note: document.querySelector("#taskNote"),
   status: document.querySelector("#taskStatus"),
@@ -132,7 +139,7 @@ async function loadBoard() {
 
   const { data, error } = await supabase
     .from("tasks")
-    .select("id, title, description, note, status, due_date, link, created_at, updated_at")
+    .select("id, title, assignee, description, note, status, due_date, link, created_at, updated_at")
     .order("status", { ascending: true })
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("updated_at", { ascending: false });
@@ -155,6 +162,7 @@ async function saveTask() {
   const task = {
     id: fields.id.value || crypto.randomUUID(),
     title: fields.title.value.trim(),
+    assignee: fields.assignee.value.trim(),
     description: fields.description.value.trim(),
     note: fields.note.value.trim(),
     status: fields.status.value,
@@ -192,6 +200,7 @@ async function updateTask(taskId, patch) {
     .from("tasks")
     .update({
       title: currentTask.title,
+      assignee: currentTask.assignee,
       description: currentTask.description,
       note: currentTask.note,
       status: patch.status ?? currentTask.status,
@@ -250,8 +259,9 @@ function subscribeToTasks() {
 }
 
 function renderBoard() {
-  const columns = ["todo", "in-progress", "done"];
-  const visibleTasks = state.tasks.filter(matchesSearch);
+  const columns = ["pending", "needs-attention", "done"];
+  const normalizedTasks = state.tasks.map(normalizeTask);
+  const visibleTasks = normalizedTasks.filter(matchesSearch);
 
   columns.forEach(status => {
     const zone = document.querySelector(`[data-dropzone="${status}"]`);
@@ -290,12 +300,16 @@ function renderBoard() {
   });
 
   stats.textContent = `${visibleTasks.length} visible task${visibleTasks.length === 1 ? "" : "s"} across ${state.tasks.length} total`;
+  summaryPending.textContent = String(normalizedTasks.filter(task => task.status === "pending").length);
+  summaryDone.textContent = String(normalizedTasks.filter(task => task.status === "done").length);
+  summaryAttention.textContent = String(normalizedTasks.filter(task => task.status === "needs-attention").length);
 }
 
 function buildTaskCard(task) {
   const fragment = template.content.cloneNode(true);
   const card = fragment.querySelector(".task-card");
   const title = fragment.querySelector(".task-title");
+  const assignee = fragment.querySelector(".task-assignee");
   const description = fragment.querySelector(".task-description");
   const note = fragment.querySelector(".task-note");
   const duePill = fragment.querySelector(".due-pill");
@@ -304,7 +318,9 @@ function buildTaskCard(task) {
 
   card.dataset.taskId = task.id;
   card.classList.add(`status-${task.status}`);
+  applyAssigneeTheme(card, task.assignee);
   title.textContent = task.title;
+  assignee.textContent = task.assignee || "Unassigned";
   description.textContent = task.description || "No description added.";
   note.textContent = task.note || "No note added.";
 
@@ -342,6 +358,7 @@ function openDialog(task = null) {
     deleteTaskButton.hidden = false;
     fields.id.value = task.id;
     fields.title.value = task.title;
+    fields.assignee.value = task.assignee || "";
     fields.description.value = task.description;
     fields.note.value = task.note;
     fields.status.value = task.status;
@@ -351,7 +368,7 @@ function openDialog(task = null) {
     dialogTitle.textContent = "Add Task";
     deleteTaskButton.hidden = true;
     fields.id.value = "";
-    fields.status.value = "todo";
+    fields.status.value = "pending";
   }
 
   dialog.showModal();
@@ -385,6 +402,7 @@ function matchesSearch(task) {
   }
 
   const haystack = [task.title, task.description, task.note, task.link, task.due_date]
+    .concat(task.assignee || "")
     .join(" ")
     .toLowerCase();
 
@@ -435,4 +453,39 @@ function getRelativeDate(offsetDays) {
   const date = new Date();
   date.setDate(date.getDate() + offsetDays);
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeTask(task) {
+  const normalizedStatus = task.status === "todo"
+    ? "pending"
+    : task.status === "in-progress"
+      ? "needs-attention"
+      : task.status;
+
+  return {
+    ...task,
+    assignee: task.assignee || "",
+    status: normalizedStatus
+  };
+}
+
+function applyAssigneeTheme(card, assignee) {
+  const themes = [
+    ["#5f7cb6", "rgba(95, 124, 182, 0.14)"],
+    ["#739a69", "rgba(115, 154, 105, 0.16)"],
+    ["#c17e49", "rgba(193, 126, 73, 0.16)"],
+    ["#8a68b5", "rgba(138, 104, 181, 0.16)"],
+    ["#3d8b87", "rgba(61, 139, 135, 0.16)"]
+  ];
+
+  const name = (assignee || "unassigned").trim().toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash << 5) - hash + name.charCodeAt(index);
+    hash |= 0;
+  }
+
+  const [strong, soft] = themes[Math.abs(hash) % themes.length];
+  card.style.setProperty("--assignee-strong", strong);
+  card.style.setProperty("--assignee-soft", soft);
 }
