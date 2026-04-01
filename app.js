@@ -30,7 +30,8 @@ const state = {
     assignee: "",
     dueDateFrom: "",
     dueDateTo: "",
-    completionDate: ""
+    completionDateFrom: "",
+    completionDateTo: ""
   }
 };
 
@@ -56,7 +57,8 @@ const newAssigneeName = document.querySelector("#newAssigneeName");
 const assigneeFilter = document.querySelector("#assigneeFilter");
 const dueDateFromFilter = document.querySelector("#dueDateFromFilter");
 const dueDateToFilter = document.querySelector("#dueDateToFilter");
-const completionDateFilter = document.querySelector("#completionDateFilter");
+const completionDateFromFilter = document.querySelector("#completionDateFromFilter");
+const completionDateToFilter = document.querySelector("#completionDateToFilter");
 
 const fields = {
   id: document.querySelector("#taskId"),
@@ -97,8 +99,13 @@ dueDateToFilter.addEventListener("change", event => {
   renderBoard();
 });
 
-completionDateFilter.addEventListener("change", event => {
-  state.filters.completionDate = event.target.value;
+completionDateFromFilter.addEventListener("change", event => {
+  state.filters.completionDateFrom = event.target.value;
+  renderBoard();
+});
+
+completionDateToFilter.addEventListener("change", event => {
+  state.filters.completionDateTo = event.target.value;
   renderBoard();
 });
 
@@ -603,11 +610,13 @@ function clearFilters() {
   state.filters.assignee = "";
   state.filters.dueDateFrom = "";
   state.filters.dueDateTo = "";
-  state.filters.completionDate = "";
+  state.filters.completionDateFrom = "";
+  state.filters.completionDateTo = "";
   assigneeFilter.value = "";
   dueDateFromFilter.value = "";
   dueDateToFilter.value = "";
-  completionDateFilter.value = "";
+  completionDateFromFilter.value = "";
+  completionDateToFilter.value = "";
   renderBoard();
 }
 
@@ -706,8 +715,16 @@ function matchesFilters(task) {
     }
   }
 
-  if (state.filters.completionDate && task.completed_at !== state.filters.completionDate) {
-    return false;
+  if (state.filters.completionDateFrom) {
+    if (!task.completed_at || task.completed_at < state.filters.completionDateFrom) {
+      return false;
+    }
+  }
+
+  if (state.filters.completionDateTo) {
+    if (!task.completed_at || task.completed_at > state.filters.completionDateTo) {
+      return false;
+    }
   }
 
   return true;
@@ -718,7 +735,8 @@ function hasActiveFilters() {
     state.filters.assignee ||
     state.filters.dueDateFrom ||
     state.filters.dueDateTo ||
-    state.filters.completionDate
+    state.filters.completionDateFrom ||
+    state.filters.completionDateTo
   );
 }
 

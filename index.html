@@ -94,10 +94,17 @@
         </div>
       </article>
       <article class="filter-card">
-        <label for="completionDateFilter">
-          <span>Filter by Completion Date</span>
-          <input id="completionDateFilter" type="date">
-        </label>
+        <span>Filter by Completion Date</span>
+        <div class="range-fields">
+          <label for="completionDateFromFilter">
+            <span>From</span>
+            <input id="completionDateFromFilter" type="date">
+          </label>
+          <label for="completionDateToFilter">
+            <span>To</span>
+            <input id="completionDateToFilter" type="date">
+          </label>
+        </div>
       </article>
       <article class="filter-card filter-card-action">
         <button id="clearFiltersButton" class="ghost-button" type="button">Clear Filters</button>
