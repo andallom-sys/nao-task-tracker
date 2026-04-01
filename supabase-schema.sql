@@ -8,6 +8,7 @@ create table if not exists public.tasks (
   note text not null default '',
   status text not null default 'pending' check (status in ('pending', 'in-progress', 'done', 'blocked')),
   due_date date,
+  completed_at date,
   link text not null default '',
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -16,13 +17,19 @@ create table if not exists public.tasks (
 create table if not exists public.assignees (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
+  color_strong text not null default '#5f7cb6',
+  color_soft text not null default 'rgba(95, 124, 182, 0.14)',
   created_at timestamptz not null default timezone('utc', now())
 );
 
 alter table public.tasks add column if not exists assignee text not null default '';
+alter table public.tasks add column if not exists completed_at date;
 alter table public.tasks alter column status set default 'pending';
 alter table public.tasks drop constraint if exists tasks_status_check;
 alter table public.tasks drop constraint if exists public_tasks_status_check;
+
+alter table public.assignees add column if not exists color_strong text not null default '#5f7cb6';
+alter table public.assignees add column if not exists color_soft text not null default 'rgba(95, 124, 182, 0.14)';
 
 update public.tasks
 set status = case
@@ -33,6 +40,11 @@ set status = case
 end
 where status in ('todo', 'needs-attention')
    or status not in ('pending', 'in-progress', 'done', 'blocked');
+
+update public.tasks
+set completed_at = coalesce(completed_at, updated_at::date)
+where status = 'done'
+  and completed_at is null;
 
 alter table public.tasks
 add constraint tasks_status_check
@@ -115,12 +127,14 @@ for delete
 to anon, authenticated
 using (true);
 
-insert into public.assignees (name)
+insert into public.assignees (name, color_strong, color_soft)
 values
-  ('Bea Montenegro'),
-  ('Christian Galang'),
-  ('Margen Andallo')
-on conflict (name) do nothing;
+  ('Bea Montenegro', '#5f7cb6', 'rgba(95, 124, 182, 0.14)'),
+  ('Christian Galang', '#739a69', 'rgba(115, 154, 105, 0.16)'),
+  ('Margen Andallo', '#c17e49', 'rgba(193, 126, 73, 0.16)')
+on conflict (name) do update
+set color_strong = excluded.color_strong,
+    color_soft = excluded.color_soft;
 
 do $$
 begin

@@ -10,6 +10,27 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <dialog id="passwordDialog" class="task-dialog password-dialog">
+    <form id="passwordForm" class="task-form" method="dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Protected Access</p>
+          <h2>Open Dashboard</h2>
+        </div>
+      </div>
+      <p class="password-copy">Enter the shared password to view the Site Operations Tracker.</p>
+      <label>
+        <span>Password</span>
+        <input id="dashboardPassword" type="password" autocomplete="current-password" placeholder="Enter password" required>
+      </label>
+      <p id="passwordError" class="password-error" hidden>Incorrect password. Please try again.</p>
+      <div class="dialog-actions">
+        <span></span>
+        <button class="primary-button" type="submit">Open Dashboard</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="app-shell">
     <header class="hero">
       <div>
@@ -48,6 +69,32 @@
         <p class="drag-hint">Drag cards between columns to update status.</p>
         <div class="stats" id="boardStats" aria-live="polite"></div>
       </div>
+    </section>
+
+    <section class="filters" aria-label="Task filters">
+      <article class="filter-card">
+        <label for="assigneeFilter">
+          <span>Filter by Assignee</span>
+          <select id="assigneeFilter">
+            <option value="">All assignees</option>
+          </select>
+        </label>
+      </article>
+      <article class="filter-card">
+        <label for="dueDateFilter">
+          <span>Filter by Due Date</span>
+          <input id="dueDateFilter" type="date">
+        </label>
+      </article>
+      <article class="filter-card">
+        <label for="completionDateFilter">
+          <span>Filter by Completion Date</span>
+          <input id="completionDateFilter" type="date">
+        </label>
+      </article>
+      <article class="filter-card filter-card-action">
+        <button id="clearFiltersButton" class="ghost-button" type="button">Clear Filters</button>
+      </article>
     </section>
 
     <main class="board" id="board">

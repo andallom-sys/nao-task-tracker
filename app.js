@@ -1,10 +1,20 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, DASHBOARD_PASSWORD } from "./config.js";
 
 const defaultAssignees = [
   "Bea Montenegro",
   "Christian Galang",
   "Margen Andallo"
+];
+
+const assigneePalette = [
+  { strong: "#5f7cb6", soft: "rgba(95, 124, 182, 0.14)" },
+  { strong: "#739a69", soft: "rgba(115, 154, 105, 0.16)" },
+  { strong: "#c17e49", soft: "rgba(193, 126, 73, 0.16)" },
+  { strong: "#8a68b5", soft: "rgba(138, 104, 181, 0.16)" },
+  { strong: "#3d8b87", soft: "rgba(61, 139, 135, 0.16)" },
+  { strong: "#c05757", soft: "rgba(192, 87, 87, 0.16)" },
+  { strong: "#a2853f", soft: "rgba(162, 133, 63, 0.16)" }
 ];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -15,12 +25,21 @@ const state = {
   searchTerm: "",
   dragTaskId: null,
   isLoading: true,
-  errorMessage: ""
+  errorMessage: "",
+  filters: {
+    assignee: "",
+    dueDate: "",
+    completionDate: ""
+  }
 };
 
 const board = document.querySelector("#board");
 const dialog = document.querySelector("#taskDialog");
 const assigneeDialog = document.querySelector("#assigneeDialog");
+const passwordDialog = document.querySelector("#passwordDialog");
+const passwordForm = document.querySelector("#passwordForm");
+const passwordInput = document.querySelector("#dashboardPassword");
+const passwordError = document.querySelector("#passwordError");
 const taskForm = document.querySelector("#taskForm");
 const dialogTitle = document.querySelector("#dialogTitle");
 const deleteTaskButton = document.querySelector("#deleteTaskButton");
@@ -33,6 +52,9 @@ const summaryInProgress = document.querySelector("#summaryInProgress");
 const summaryBlocked = document.querySelector("#summaryBlocked");
 const assigneeList = document.querySelector("#assigneeList");
 const newAssigneeName = document.querySelector("#newAssigneeName");
+const assigneeFilter = document.querySelector("#assigneeFilter");
+const dueDateFilter = document.querySelector("#dueDateFilter");
+const completionDateFilter = document.querySelector("#completionDateFilter");
 
 const fields = {
   id: document.querySelector("#taskId"),
@@ -51,10 +73,31 @@ document.querySelector("#closeDialogButton").addEventListener("click", closeDial
 document.querySelector("#cancelTaskButton").addEventListener("click", closeDialog);
 document.querySelector("#closeAssigneeDialogButton").addEventListener("click", closeAssigneeDialog);
 document.querySelector("#addAssigneeButton").addEventListener("click", addAssignee);
+document.querySelector("#clearFiltersButton").addEventListener("click", clearFilters);
 
 searchInput.addEventListener("input", event => {
   state.searchTerm = event.target.value.trim().toLowerCase();
   renderBoard();
+});
+
+assigneeFilter.addEventListener("change", event => {
+  state.filters.assignee = event.target.value;
+  renderBoard();
+});
+
+dueDateFilter.addEventListener("change", event => {
+  state.filters.dueDate = event.target.value;
+  renderBoard();
+});
+
+completionDateFilter.addEventListener("change", event => {
+  state.filters.completionDate = event.target.value;
+  renderBoard();
+});
+
+passwordForm.addEventListener("submit", event => {
+  event.preventDefault();
+  unlockDashboard();
 });
 
 taskForm.addEventListener("submit", async event => {
@@ -120,10 +163,14 @@ board.querySelectorAll("[data-dropzone]").forEach(zone => {
   });
 });
 
-subscribeToTasks();
-subscribeToAssignees();
-await loadAssignees();
-await loadBoard();
+lockDashboardIfNeeded();
+
+async function initializeDashboard() {
+  subscribeToTasks();
+  subscribeToAssignees();
+  await loadAssignees();
+  await loadBoard();
+}
 
 async function loadBoard() {
   state.isLoading = true;
@@ -133,7 +180,7 @@ async function loadBoard() {
 
   const { data, error } = await supabase
     .from("tasks")
-    .select("id, title, assignee, description, note, status, due_date, link, created_at, updated_at")
+    .select("id, title, assignee, description, note, status, due_date, completed_at, link, created_at, updated_at")
     .order("status", { ascending: true })
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("updated_at", { ascending: false });
@@ -155,7 +202,7 @@ async function loadBoard() {
 async function loadAssignees() {
   const { data, error } = await supabase
     .from("assignees")
-    .select("id, name")
+    .select("id, name, color_strong, color_soft")
     .order("name", { ascending: true });
 
   if (error) {
@@ -165,18 +212,24 @@ async function loadAssignees() {
 
   state.assignees = data ?? [];
   renderAssigneeOptions();
+  renderAssigneeFilters();
   renderAssigneeList();
 }
 
 async function saveTask() {
+  const existingTask = state.tasks.find(item => item.id === fields.id.value);
+  const nextStatus = fields.status.value;
   const task = {
     id: fields.id.value || crypto.randomUUID(),
     title: fields.title.value.trim(),
     assignee: fields.assignee.value.trim(),
     description: fields.description.value.trim(),
     note: fields.note.value.trim(),
-    status: fields.status.value,
-    due_date: fields.dueDate.value,
+    status: nextStatus,
+    due_date: fields.dueDate.value || null,
+    completed_at: nextStatus === "done"
+      ? existingTask?.completed_at || getTodayDate()
+      : null,
     link: normalizeLink(fields.link.value.trim())
   };
 
@@ -204,6 +257,11 @@ async function updateTask(taskId, patch) {
     return;
   }
 
+  const nextStatus = patch.status ?? currentTask.status;
+  const completedAt = nextStatus === "done"
+    ? currentTask.completed_at || getTodayDate()
+    : null;
+
   setSyncStatus("Updating board...", false);
 
   const { error } = await supabase
@@ -213,8 +271,9 @@ async function updateTask(taskId, patch) {
       assignee: currentTask.assignee,
       description: currentTask.description,
       note: currentTask.note,
-      status: patch.status ?? currentTask.status,
+      status: nextStatus,
       due_date: patch.due_date ?? currentTask.due_date,
+      completed_at: completedAt,
       link: currentTask.link
     })
     .eq("id", taskId);
@@ -248,13 +307,19 @@ async function addAssignee() {
     return;
   }
 
-  const existing = getMergedAssigneeNames().some(item => item.toLowerCase() === name.toLowerCase());
+  const existing = getMergedAssignees().some(item => item.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     newAssigneeName.value = "";
     return;
   }
 
-  const { error } = await supabase.from("assignees").insert({ name });
+  const palette = pickNextAssigneePalette();
+  const { error } = await supabase.from("assignees").insert({
+    name,
+    color_strong: palette.strong,
+    color_soft: palette.soft
+  });
+
   if (error) {
     setSyncStatus(error.message || "Could not add assignee.", true);
     return;
@@ -295,7 +360,7 @@ function subscribeToAssignees() {
 function renderBoard() {
   const columns = ["pending", "in-progress", "done", "blocked"];
   const normalizedTasks = state.tasks.map(normalizeTask);
-  const visibleTasks = normalizedTasks.filter(matchesSearch);
+  const visibleTasks = normalizedTasks.filter(matchesFilters).filter(matchesSearch);
 
   columns.forEach(status => {
     const zone = document.querySelector(`[data-dropzone="${status}"]`);
@@ -323,7 +388,9 @@ function renderBoard() {
     if (!tasks.length) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.textContent = state.searchTerm ? "No matching tasks in this column." : "Drop a task here or add a new one.";
+      empty.textContent = state.searchTerm || hasActiveFilters()
+        ? "No matching tasks for the current filters."
+        : "Drop a task here or add a new one.";
       zone.appendChild(empty);
       return;
     }
@@ -350,9 +417,11 @@ function buildTaskCard(task) {
   const link = fragment.querySelector(".task-link");
   const editButton = fragment.querySelector(".edit-chip");
 
+  const palette = getAssigneePalette(task.assignee);
   card.dataset.taskId = task.id;
   card.classList.add(`status-${task.status}`);
-  applyAssigneeTheme(card, task.assignee);
+  card.style.setProperty("--assignee-strong", palette.strong);
+  card.style.setProperty("--assignee-soft", palette.soft);
   title.textContent = task.title;
   assignee.textContent = task.assignee || "Unassigned";
   description.textContent = task.description || "No description added.";
@@ -428,18 +497,34 @@ function closeAssigneeDialog() {
 
 function renderAssigneeOptions() {
   const currentValue = fields.assignee.value;
-  const names = getMergedAssigneeNames();
+  const assignees = getMergedAssignees();
 
   fields.assignee.innerHTML = '<option value="">Unassigned</option>';
 
-  names.forEach(name => {
+  assignees.forEach(assignee => {
     const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
+    option.value = assignee.name;
+    option.textContent = assignee.name;
     fields.assignee.appendChild(option);
   });
 
-  fields.assignee.value = names.includes(currentValue) ? currentValue : "";
+  fields.assignee.value = assignees.some(item => item.name === currentValue) ? currentValue : "";
+}
+
+function renderAssigneeFilters() {
+  const currentValue = assigneeFilter.value;
+  const assignees = getMergedAssignees();
+
+  assigneeFilter.innerHTML = '<option value="">All assignees</option>';
+
+  assignees.forEach(assignee => {
+    const option = document.createElement("option");
+    option.value = assignee.name;
+    option.textContent = assignee.name;
+    assigneeFilter.appendChild(option);
+  });
+
+  assigneeFilter.value = assignees.some(item => item.name === currentValue) ? currentValue : "";
 }
 
 function renderAssigneeList() {
@@ -457,9 +542,18 @@ function renderAssigneeList() {
     const row = document.createElement("div");
     row.className = "assignee-row";
 
+    const meta = document.createElement("span");
+    meta.className = "assignee-meta";
+
+    const swatch = document.createElement("span");
+    swatch.className = "assignee-swatch";
+    swatch.style.setProperty("--swatch-color", assignee.color_strong || getFallbackPalette(assignee.name).strong);
+
     const label = document.createElement("span");
     label.className = "assignee-name";
     label.textContent = assignee.name;
+
+    meta.append(swatch, label);
 
     const removeButton = document.createElement("button");
     removeButton.className = "ghost-button";
@@ -469,15 +563,92 @@ function renderAssigneeList() {
       await removeAssignee(assignee.id);
     });
 
-    row.append(label, removeButton);
+    row.append(meta, removeButton);
     assigneeList.appendChild(row);
   });
 }
 
-function getMergedAssigneeNames() {
-  const names = new Set(defaultAssignees);
-  state.assignees.forEach(assignee => names.add(assignee.name));
-  return Array.from(names).sort((left, right) => left.localeCompare(right));
+function lockDashboardIfNeeded() {
+  const unlocked = window.sessionStorage.getItem("nao-dashboard-unlocked");
+  if (unlocked === "true") {
+    initializeDashboard();
+    return;
+  }
+
+  passwordDialog.showModal();
+  passwordInput.focus();
+}
+
+function unlockDashboard() {
+  if (passwordInput.value !== DASHBOARD_PASSWORD) {
+    passwordError.hidden = false;
+    passwordInput.select();
+    return;
+  }
+
+  passwordError.hidden = true;
+  window.sessionStorage.setItem("nao-dashboard-unlocked", "true");
+  passwordDialog.close();
+  initializeDashboard();
+}
+
+function clearFilters() {
+  state.filters.assignee = "";
+  state.filters.dueDate = "";
+  state.filters.completionDate = "";
+  assigneeFilter.value = "";
+  dueDateFilter.value = "";
+  completionDateFilter.value = "";
+  renderBoard();
+}
+
+function getMergedAssignees() {
+  const map = new Map();
+
+  defaultAssignees.forEach((name, index) => {
+    const palette = assigneePalette[index % assigneePalette.length];
+    map.set(name.toLowerCase(), {
+      id: `default-${index}`,
+      name,
+      color_strong: palette.strong,
+      color_soft: palette.soft
+    });
+  });
+
+  state.assignees.forEach(assignee => {
+    map.set(assignee.name.toLowerCase(), assignee);
+  });
+
+  return Array.from(map.values()).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function pickNextAssigneePalette() {
+  const used = new Set(state.assignees.map(item => item.color_strong));
+  const available = assigneePalette.find(item => !used.has(item.strong));
+  return available || assigneePalette[state.assignees.length % assigneePalette.length];
+}
+
+function getAssigneePalette(name) {
+  const match = getMergedAssignees().find(item => item.name.toLowerCase() === (name || "").toLowerCase());
+  if (match?.color_strong && match?.color_soft) {
+    return {
+      strong: match.color_strong,
+      soft: match.color_soft
+    };
+  }
+
+  return getFallbackPalette(name);
+}
+
+function getFallbackPalette(name) {
+  const value = (name || "unassigned").trim().toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return assigneePalette[Math.abs(hash) % assigneePalette.length];
 }
 
 function setSyncStatus(message, isError) {
@@ -502,11 +673,31 @@ function matchesSearch(task) {
     return true;
   }
 
-  const haystack = [task.title, task.description, task.note, task.link, task.due_date, task.assignee]
+  const haystack = [task.title, task.description, task.note, task.link, task.due_date, task.completed_at, task.assignee]
     .join(" ")
     .toLowerCase();
 
   return haystack.includes(state.searchTerm);
+}
+
+function matchesFilters(task) {
+  if (state.filters.assignee && task.assignee !== state.filters.assignee) {
+    return false;
+  }
+
+  if (state.filters.dueDate && task.due_date !== state.filters.dueDate) {
+    return false;
+  }
+
+  if (state.filters.completionDate && task.completed_at !== state.filters.completionDate) {
+    return false;
+  }
+
+  return true;
+}
+
+function hasActiveFilters() {
+  return Boolean(state.filters.assignee || state.filters.dueDate || state.filters.completionDate);
 }
 
 function compareDueDates(left, right) {
@@ -560,27 +751,12 @@ function normalizeTask(task) {
   return {
     ...task,
     assignee: task.assignee || "",
-    status
+    status,
+    due_date: task.due_date ? String(task.due_date).slice(0, 10) : "",
+    completed_at: task.completed_at ? String(task.completed_at).slice(0, 10) : ""
   };
 }
 
-function applyAssigneeTheme(card, assignee) {
-  const themes = [
-    ["#5f7cb6", "rgba(95, 124, 182, 0.14)"],
-    ["#739a69", "rgba(115, 154, 105, 0.16)"],
-    ["#c17e49", "rgba(193, 126, 73, 0.16)"],
-    ["#8a68b5", "rgba(138, 104, 181, 0.16)"],
-    ["#3d8b87", "rgba(61, 139, 135, 0.16)"]
-  ];
-
-  const name = (assignee || "unassigned").trim().toLowerCase();
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = (hash << 5) - hash + name.charCodeAt(index);
-    hash |= 0;
-  }
-
-  const [strong, soft] = themes[Math.abs(hash) % themes.length];
-  card.style.setProperty("--assignee-strong", strong);
-  card.style.setProperty("--assignee-soft", soft);
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
 }
