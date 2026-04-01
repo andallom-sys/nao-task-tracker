@@ -175,6 +175,18 @@ select {
   gap: 8px;
 }
 
+.range-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.range-fields label {
+  display: grid;
+  gap: 8px;
+}
+
 .filter-card-action {
   display: grid;
   align-items: end;
@@ -611,7 +623,8 @@ select {
   .hero-actions,
   .action-group,
   .form-grid,
-  .inline-form {
+  .inline-form,
+  .range-fields {
     display: grid;
     grid-template-columns: 1fr;
   }

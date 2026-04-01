@@ -28,7 +28,8 @@ const state = {
   errorMessage: "",
   filters: {
     assignee: "",
-    dueDate: "",
+    dueDateFrom: "",
+    dueDateTo: "",
     completionDate: ""
   }
 };
@@ -53,7 +54,8 @@ const summaryBlocked = document.querySelector("#summaryBlocked");
 const assigneeList = document.querySelector("#assigneeList");
 const newAssigneeName = document.querySelector("#newAssigneeName");
 const assigneeFilter = document.querySelector("#assigneeFilter");
-const dueDateFilter = document.querySelector("#dueDateFilter");
+const dueDateFromFilter = document.querySelector("#dueDateFromFilter");
+const dueDateToFilter = document.querySelector("#dueDateToFilter");
 const completionDateFilter = document.querySelector("#completionDateFilter");
 
 const fields = {
@@ -85,8 +87,13 @@ assigneeFilter.addEventListener("change", event => {
   renderBoard();
 });
 
-dueDateFilter.addEventListener("change", event => {
-  state.filters.dueDate = event.target.value;
+dueDateFromFilter.addEventListener("change", event => {
+  state.filters.dueDateFrom = event.target.value;
+  renderBoard();
+});
+
+dueDateToFilter.addEventListener("change", event => {
+  state.filters.dueDateTo = event.target.value;
   renderBoard();
 });
 
@@ -594,10 +601,12 @@ function unlockDashboard() {
 
 function clearFilters() {
   state.filters.assignee = "";
-  state.filters.dueDate = "";
+  state.filters.dueDateFrom = "";
+  state.filters.dueDateTo = "";
   state.filters.completionDate = "";
   assigneeFilter.value = "";
-  dueDateFilter.value = "";
+  dueDateFromFilter.value = "";
+  dueDateToFilter.value = "";
   completionDateFilter.value = "";
   renderBoard();
 }
@@ -685,8 +694,16 @@ function matchesFilters(task) {
     return false;
   }
 
-  if (state.filters.dueDate && task.due_date !== state.filters.dueDate) {
-    return false;
+  if (state.filters.dueDateFrom) {
+    if (!task.due_date || task.due_date < state.filters.dueDateFrom) {
+      return false;
+    }
+  }
+
+  if (state.filters.dueDateTo) {
+    if (!task.due_date || task.due_date > state.filters.dueDateTo) {
+      return false;
+    }
   }
 
   if (state.filters.completionDate && task.completed_at !== state.filters.completionDate) {
@@ -697,7 +714,12 @@ function matchesFilters(task) {
 }
 
 function hasActiveFilters() {
-  return Boolean(state.filters.assignee || state.filters.dueDate || state.filters.completionDate);
+  return Boolean(
+    state.filters.assignee ||
+    state.filters.dueDateFrom ||
+    state.filters.dueDateTo ||
+    state.filters.completionDate
+  );
 }
 
 function compareDueDates(left, right) {
